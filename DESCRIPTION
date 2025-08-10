@@ -16,10 +16,14 @@ Imports:
     cluster,
     clusterCrit,
     ggplot2,
+    Rcpp,
     Rtsne,
     stats,
     umap,
     viridis
+LinkingTo:
+    Rcpp,
+    RcppArmadillo
 Suggests:
     BiocStyle,
     caret, 

@@ -21,26 +21,21 @@
 #'   the antibody's dominant label; push away otherwise.
 #' - **"binary_crossentropy"**: Similar to categorical CE, but we interpret factor y
 #'   as binary (two classes). Pull for same label, push for different label.
-#' - **"kullback_leibler"**: Very rough approach that treats “dominant label vs. others”
-#'   as p and q distributions, pushing/pulling prototypes.
-#' - **"cosine"**: Interpreted as trying to maximize cosine similarity for same-label points
-#'   and minimize for different-label points.
+#' - **"kullback_leibler"**: A heuristic that pushes prototypes towards or away from data points.
+#' - **"cosine"**: A heuristic that aims to maximize cosine similarity for same-label points.
 #'
 #' ### Regression (numeric y)
-#' - **"mse"**: Mean squared error approximation in feature space (pull prototypes
-#'   toward assigned points).
-#' - **"mae"**: Mean absolute error approach (sign-based pull).
-#' - **"poisson"**: Poisson deviance (toy approach that scales the gradient by
-#'   (pred - y)/pred if we stored a predicted rate; here we do a naive version).
-#' - **"huber"**: Combines L1 and L2 regions, uses a delta cutoff. We adapt it
-#'   to a naive per-point gradient in feature space.
+#' - **"mse"**: Mean Squared Error. The gradient is the residual vector.
+#' - **"mae"**: Mean Absolute Error. The gradient is the sign of the residual vector.
+#' - **"poisson"**: A heuristic for Poisson loss. Falls back to the MSE gradient.
+#' - **"huber"**: Huber loss, a combination of MSE and MAE that is robust to outliers.
 #'
 #' ## Available Optimizers
-#' - **"sgd"**: Basic stochastic gradient descent.
-#' - **"momentum"**: SGD with momentum.
-#' - **"adagrad"**: Adaptive gradient descent.
-#' - **"adam"**: Adaptive moment estimation.
-#' - **"rmsprop"**: Root Mean Square Propagation.
+#' - **"sgd"**: Standard Stochastic Gradient Descent. Updates prototypes with a fixed learning rate.
+#' - **"momentum"**: SGD with momentum. Helps to accelerate gradients in the correct direction.
+#' - **"adagrad"**: Adaptive Gradient Descent. Adapts the learning rate for each parameter.
+#' - **"adam"**: Adaptive Moment Estimation. A popular optimizer that combines momentum and adaptive learning rates.
+#' - **"rmsprop"**: Root Mean Square Propagation. An adaptive learning rate method.
 #'
 #' @param A Numeric matrix (nAb x d) of antibody/prototype positions.
 #' @param X Matrix or data frame (nSamples x d) of feature data.
@@ -62,14 +57,13 @@
 #' @param beta1 Numeric. Exponential decay rate for the first moment estimates (used in Adam).
 #' @param beta2 Numeric. Exponential decay rate for the second moment estimates (used in Adam).
 #' @param rmsprop_decay Numeric. Decay factor for the squared gradient moving average (used in RMSProp).
-#' @param epsilon Numeric. A small constant for numerical stability.
+@param epsilon Numeric. A small constant for numerical stability in adaptive optimizers.
 #'
 #' @return Updated matrix \code{A} of shape (nAb x d).
 #'
 #' @details
-#' This function performs gradient-based updates on each antibody using the selected loss function.
-#' Depending on the chosen \code{optimizer}, it may use plain SGD, momentum-based updates, Adagrad,
-#' Adam, or RMSProp.
+#' This function performs gradient-based updates on each antibody using the selected loss function
+#' and optimizer. The updates are performed stochastically, one data point at a time.
 #'
 #' @export
 refineB <- function(A,
@@ -118,21 +112,18 @@ refineB <- function(A,
     stop("Length of 'assignments' must match nrow(X).")
   }
   
-  # Convert assignments to numeric indices if needed (e.g., if assignments are characters)
+  # Convert assignments to numeric indices if needed
   unique_assignments <- unique(assignments)
   assignments <- match(assignments, unique_assignments)
   nLabels <- length(unique_assignments)
   
   if (nLabels > nAb) {
     if (verbose) {
-      message(sprintf("Number of unique assignments (%d) exceeds the number of 
-                      ntibodies (nAb = %d).", nLabels, nAb))
+      message(sprintf("Number of unique assignments (%d) exceeds the number of antibodies (nAb = %d).", nLabels, nAb))
     }
   }
   if (nLabels < nAb && verbose) {
-    message(sprintf("Number of prototypes (nAb = %d) exceeds unique labels 
-                    (%d). Extra prototypes will not be assigned data points.",
-                    nAb, nLabels))
+    message(sprintf("Number of prototypes (nAb = %d) exceeds unique labels (%d). Extra prototypes will not be assigned data points.", nAb, nLabels))
   }
   if (any(assignments < 1 | assignments > nAb, na.rm = TRUE)) {
     invalid_assignments <- assignments[assignments < 1 | assignments > nAb]
@@ -144,31 +135,27 @@ refineB <- function(A,
     stop("y must be numeric for regression.")
   }
   
-  # Build a list of indices per antibody for potential classification tasks.
-  samples_by_ab <- vector("list", nAb)
-  for (i in seq_len(n)) {
-    j <- assignments[i]
-    samples_by_ab[[j]] <- c(samples_by_ab[[j]], i)
-  }
+  # Efficiently create a list of sample indices for each antibody
+  samples_by_ab <- split(seq_len(n), assignments)
   
-  # For classification: determine the dominant label per antibody.
+  # For classification, determine the dominant label for each antibody
   ab_label <- rep(NA_character_, nAb)
   if (task == "classification") {
     if (!is.factor(y)) {
       y <- as.factor(y)
     }
-    for (ab_idx in seq_len(nAb)) {
-      pts <- samples_by_ab[[ab_idx]]
+    # Get the dominant label for each antibody using sapply for efficiency
+    dominant_labels <- sapply(samples_by_ab, function(pts) {
       if (length(pts) == 0) {
-        ab_label[ab_idx] <- NA
-      } else {
-        tbl <- table(y[pts])
-        ab_label[ab_idx] <- names(tbl)[which.max(tbl)]
+        return(NA_character_)
       }
-    }
+      tbl <- table(y[pts])
+      names(tbl)[which.max(tbl)]
+    })
+    ab_label[as.numeric(names(dominant_labels))] <- dominant_labels
   }
   
-  # Initialize optimizer state variables as needed.
+  # Initialize optimizer state variables
   if (optimizer == "momentum") {
     velocity <- matrix(0, nrow = nAb, ncol = d)
   } else if (optimizer == "adagrad") {
@@ -182,31 +169,29 @@ refineB <- function(A,
   }
   
   # Main refinement loop over steps.
+  # This loop is stochastic and sequential, making it hard to vectorize.
   for (st in seq_len(steps)) {
     if (verbose) {
       message(sprintf("Refinement step %d/%d", st, steps))
     }
-    # Shuffle sample indices.
+    # Shuffle sample indices for stochastic gradient updates
     idx_shuf <- sample.int(n)
     for (i in idx_shuf) {
       j <- assignments[i]
       
-      # Skip invalid assignments.
+      # Skip if the assignment is invalid
       if (is.na(j) || j < 1 || j > nAb) next
       
-      # Get the data point (ensure it's a numeric vector of length d).
+      # Get the data point
       x_i <- as.numeric(X[i, ])
-      if (length(x_i) != d) {
-        stop(sprintf("x_i is not the correct length: expected %d, got %d", d, length(x_i)))
-      }
       
-      # For classification, determine if the current data point shares the dominant label.
+      # For classification, determine if the data point has the same label as the antibody
       same_label <- NA
       if (task == "classification" && !is.na(ab_label[j])) {
         same_label <- (y[i] == ab_label[j])
       }
       
-      # Compute the gradient using your helper function.
+      # Compute the heuristic gradient
       grad <- .update_prototype(
         ab_vec      = A[j, ],
         x_i         = x_i,
@@ -217,29 +202,30 @@ refineB <- function(A,
         huber_delta = huber_delta
       )
       
-      if (length(grad) != d) {
-        stop(sprintf(".update_prototype returned a gradient of length %d, expected %d", length(grad), d))
-      }
-      
-      # Optimizer-specific update:
+      # Optimizer-specific updates
       if (optimizer == "sgd") {
-        A[j, ] <- A[j, ] + lr * grad
+        # Standard SGD update
+        A[j, ] <- A[j, ] - lr * grad
       } else if (optimizer == "momentum") {
-        velocity[j, ] <- momentum_coef * velocity[j, ] + grad
-        A[j, ] <- A[j, ] + lr * velocity[j, ]
+        # Momentum update
+        velocity[j, ] <- momentum_coef * velocity[j, ] - lr * grad
+        A[j, ] <- A[j, ] + velocity[j, ]
       } else if (optimizer == "adagrad") {
+        # Adagrad update
         acc[j, ] <- acc[j, ] + grad^2
-        A[j, ] <- A[j, ] + lr * grad / (sqrt(acc[j, ]) + epsilon)
+        A[j, ] <- A[j, ] - lr * grad / (sqrt(acc[j, ]) + epsilon)
       } else if (optimizer == "adam") {
+        # Adam update
+        t_count[j] <- t_count[j] + 1
         m[j, ] <- beta1 * m[j, ] + (1 - beta1) * grad
         v[j, ] <- beta2 * v[j, ] + (1 - beta2) * (grad^2)
-        t_count[j] <- t_count[j] + 1
-        m_hat <- m[j, ] / (1 - beta1^(t_count[j]))
-        v_hat <- v[j, ] / (1 - beta2^(t_count[j]))
-        A[j, ] <- A[j, ] + lr * m_hat / (sqrt(v_hat) + epsilon)
+        m_hat <- m[j, ] / (1 - beta1^t_count[j])
+        v_hat <- v[j, ] / (1 - beta2^t_count[j])
+        A[j, ] <- A[j, ] - lr * m_hat / (sqrt(v_hat) + epsilon)
       } else if (optimizer == "rmsprop") {
+        # RMSprop update
         rmsprop_cache[j, ] <- rmsprop_decay * rmsprop_cache[j, ] + (1 - rmsprop_decay) * (grad^2)
-        A[j, ] <- A[j, ] + lr * grad / (sqrt(rmsprop_cache[j, ]) + epsilon)
+        A[j, ] <- A[j, ] - lr * grad / (sqrt(rmsprop_cache[j, ]) + epsilon)
       }
     }
   }

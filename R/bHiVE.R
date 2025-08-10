@@ -13,64 +13,33 @@
 #' \code{"classification"}, or \code{"regression"}. If NULL, it is inferred 
 #' based on \code{y}.
 #' @param nAntibodies Integer. The initial population size of antibodies. 
-#' @param beta Numeric. Clone multiplier (controls how many clones are 
-#' generated for top-matching antibodies).
-#' @param epsilon Numeric. Similarity threshold used in network suppression; 
-#' antibodies closer than \code{epsilon} are considered redundant.
-#' @param maxIter Integer. Maximum number of iterations to run the AI-Net 
-#' algorithm.
-#' @param affinityFunc Character. Specifies the affinity (similarity) function 
-#' to use for antibody-data matching. One of \code{"gaussian"}, \code{"laplace"}, 
-#' \code{"polynomial"}, \code{"cosine"}, or \code{"hamming"}.
-#' @param distFunc Character. Specifies the distance function for clustering 
-#' and suppression. One of \code{"euclidean"}, \code{"manhattan"}, 
-#' \code{"minkowski"}, \code{"cosine"}, \code{"mahalanobis"}, 
-#' or \code{"hamming"}.
-#' @param affinityParams A list of optional parameters for the chosen affinity 
-#' or distance function.
+#' @param beta Numeric. The clone multiplier, which controls the number of clones generated for high-affinity antibodies.
+#' @param epsilon Numeric. The similarity threshold for network suppression. Antibodies with a distance less than epsilon are considered redundant and removed.
+#' @param maxIter Integer. The maximum number of iterations for the algorithm to run.
+#' @param affinityFunc Character. The affinity function to measure the similarity between data points and antibodies.
+#' @param distFunc Character. The distance function used for network suppression and final assignments.
+#' @param affinityParams A list of optional parameters for the affinity or distance functions (e.g., `alpha` for Gaussian kernel).
+#' @param mutationDecay Numeric. A factor by which the mutation rate decays at each iteration (e.g., 0.99). Default is 1.0 (no decay).
+#' @param mutationMin Numeric. The minimum mutation rate.
+#' @param maxClones Numeric. The maximum number of clones to generate for any single antibody.
+#' @param stopTolerance Numeric. The tolerance for early stopping based on the change in the number of antibodies.
+#' @param noImprovementLimit Integer. The number of consecutive iterations with no improvement to trigger early stopping.
+#' @param initMethod Character. The method for initializing the antibody population.
 #'   \itemize{
-#'     \item \code{alpha} (for RBF or Laplace kernel),
-#'     \item \code{c}, \code{p} (for polynomial kernel or Minkowski distance),
-#'     \item \code{Sigma} (for Mahalanobis distance).
+#'     \item `"sample"`: Randomly sample data points from `X`.
+#'     \item `"random"`: Generate random antibodies from a Gaussian distribution based on `X`.
+#'     \item `"random_uniform"`: Generate random antibodies from a uniform distribution based on `X`.
+#'     \item `"kmeans++"`: Use a k-means++ like algorithm for initialization.
 #'   }
-#' @param mutationDecay Numeric. Factor by which the mutation rate decays each 
-#' iteration (should be \eqn{\le 1.0}). Default is 1.0 (no decay).
-#' @param mutationMin Numeric. Minimum mutation rate, preventing the mutation 
-#' scale from shrinking to zero. 
-#' @param maxClones Numeric. Maximum number of clones per top-matching antibody;
-#'  defaults to \code{Inf}.
-#' @param stopTolerance Numeric. If the change in the number of antibodies 
-#' (repertoire size) is \eqn{\le stopTolerance} for consecutive iterations, 
-#' this may trigger the \code{noImprovementLimit}.
-#' @param noImprovementLimit Integer. Stops the algorithm early if there is no 
-#' further improvement in antibody count (beyond \code{stopTolerance}) for this
-#' many consecutive iterations. Default is \code{Inf}, meaning no early stop 
-#' based on improvement.
-#' @param initMethod Character. Method for initializing antibodies. Can be:
-#'   \itemize{
-#'     \item \code{"sample"} - randomly selects rows from \code{X} as initial 
-#'     antibodies.
-#'     \item \code{"random"} - samples Gaussian noise using \code{X}'s column 
-#'     means/sds.
-#'     \item \code{"random_uniform"} - samples uniformly in [min, max] of each 
-#'     column.
-#'     \item \code{"kmeans++"} - tries a kmeans++-like initialization for 
-#'     coverage.
-#'   }
-#' @param k Integer. Number of top-matching antibodies (by affinity) to 
-#' consider cloning for each data point.
-#' @param verbose Logical. If \code{TRUE}, prints progress messages each 
-#' iteration.
+#' @param k Integer. The number of top-matching antibodies to select for cloning.
+#' @param verbose Logical. If `TRUE`, print progress messages.
 #'
-#' @return A list:
+#' @return A list containing the results of the bHIVE algorithm:
 #'   \itemize{
-#'     \item \code{antibodies}: Final antibody vectors (nAntibodies x nFeatures).
-#'     \item \code{assignments}: 
-#'         - For clustering: integer cluster IDs in [1..#Antibodies].
-#'         - For classification: predicted labels.
-#'         - For regression: integer cluster index (in [1..#Antibodies]) if used in synergy with \code{refineB}.
-#'     \item \code{predictions}: Only for regression, the numeric predictions per row.
-#'     \item \code{task}: The chosen task.
+#'     \item `antibodies`: A matrix of the final antibody prototypes.
+#'     \item `assignments`: For clustering and regression, a vector of integer indices indicating the antibody assignment for each data point. For classification, a vector of predicted class labels.
+#'     \item `predictions`: For regression, a vector of numeric predictions for each data point.
+#'     \item `task`: The task performed ('clustering', 'classification', or 'regression').
 #'   }
 #'
 #'

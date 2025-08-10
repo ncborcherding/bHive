@@ -19,7 +19,13 @@ utils::globalVariables(c("PC1", "PC2", "Group", "Feature", "Prototype", "Layer")
   invisible(TRUE)
 }
 
-#Determines how to move a single prototype 'ab_vec' in feature space
+# Determines how to move a single prototype 'ab_vec' in feature space.
+# This function calculates a heuristic gradient for a given loss function.
+# NOTE: The gradient calculations, especially for classification, are simplified
+# heuristics (push/pull) rather than exact mathematical gradients. This is due
+
+# to the nature of the `refineB` function, which operates on assignments
+# post-hoc without direct access to model probabilities.
 .update_prototype <- function(ab_vec, 
                               x_i, 
                               same_label = NA, 
@@ -32,16 +38,17 @@ utils::globalVariables(c("PC1", "PC2", "Group", "Feature", "Prototype", "Layer")
   task <- match.arg(task)
   loss <- match.arg(loss)
   
-  # must return a numeric vector of length = length(ab_vec)
+  # The gradient must be a numeric vector of the same length as the antibody
   d <- length(ab_vec)
-  zero_vec <- numeric(d)          # a zero vector for quick returns
-  pull_vec <- x_i - ab_vec        # pulling ab_vec toward x_i
-  push_vec <- -pull_vec           # pushing ab_vec away from x_i
+  zero_vec <- numeric(d)          # A zero vector for quick returns
+  pull_vec <- x_i - ab_vec        # Heuristic gradient to pull ab_vec toward x_i
+  push_vec <- -pull_vec           # Heuristic gradient to push ab_vec away from x_i
   
   # =================
   # 1) CLUSTERING
   # =================
   if (task == "clustering") {
+    # For clustering, the goal is to move the prototype towards the data point.
     return(pull_vec)
   }
   
@@ -49,17 +56,18 @@ utils::globalVariables(c("PC1", "PC2", "Group", "Feature", "Prototype", "Layer")
   # 2) CLASSIFICATION
   # =================
   if (task == "classification") {
-    # If no assigned label => no movement
+    # If the antibody has no assigned label, do not move it.
     if (is.na(same_label)) {
       return(zero_vec)
     }
     is_same <- isTRUE(same_label)
     
-    # (A) If 'is_same' => we PULL
-    # (B) Else if push_away => we PUSH
-    # (C) else => zero
+    # The classification losses use a simplified push/pull heuristic.
+    # (A) If the data point has the same label as the antibody, PULL the antibody towards the data point.
+    # (B) If the labels are different and `push_away` is TRUE, PUSH the antibody away.
+    # (C) Otherwise, do nothing.
     if (loss %in% c("categorical_crossentropy","binary_crossentropy","kullback_leibler","cosine","mse")) {
-      # These classification losses share the same naive push/pull approach:
+      # For these losses, the heuristic is a simple vector difference.
       if (is_same) {
         return(pull_vec)
       } else if (push_away) {
@@ -70,7 +78,7 @@ utils::globalVariables(c("PC1", "PC2", "Group", "Feature", "Prototype", "Layer")
     }
     
     else if (loss == "mae") {
-      # sign-based approach
+      # For MAE, the heuristic is based on the sign of the vector difference.
       if (is_same) {
         return(sign(pull_vec))
       } else if (push_away) {
@@ -80,7 +88,7 @@ utils::globalVariables(c("PC1", "PC2", "Group", "Feature", "Prototype", "Layer")
       }
     }
     
-    # If user tries "poisson" or "huber" for classification, we might do a fallback or a no-op:
+    # For other losses not suitable for classification, do nothing.
     return(zero_vec)
   }
   
@@ -88,37 +96,38 @@ utils::globalVariables(c("PC1", "PC2", "Group", "Feature", "Prototype", "Layer")
   # 3) REGRESSION
   # =================
   if (task == "regression") {
-    # Residual in feature space
+    # The residual in the feature space.
     residual <- pull_vec  # i.e., x_i - ab_vec
     
     if (loss == "mse") {
-      # standard: partial derivative of 0.5 * ||residual||^2 => residual
+      # The gradient of 0.5 * ||residual||^2 is the residual itself.
       return(residual)
     }
     else if (loss == "mae") {
-      # partial derivative => sign of residual
+      # The gradient of ||residual||_1 is the sign of the residual.
       return(sign(residual))
     }
     else if (loss == "poisson") {
-      # In a pure param sense => grad ~ (pred - y)/pred * x_i, but we don't store "pred" or "y" separately.
+      # This is a heuristic for Poisson loss. A true Poisson loss would
+      # require a rate parameter, which is not available here. We fall back
+      # to the MSE-like gradient.
       return(residual)
     }
     else if (loss == "huber") {
-      # Huber: if ||residual|| <= huber_delta => MSE region; else => L1 region
+      # Huber loss combines L2 and L1 norms.
       dist_val <- sqrt(sum(residual^2))
       if (dist_val <= huber_delta) {
-        # MSE-like
+        # In the L2 region, the gradient is the residual.
         return(residual)
       } else {
-        # linear region => scale by huber_delta
-        # we do sign-based in each dimension, so:
+        # In the L1 region, the gradient is scaled.
         return(huber_delta * sign(residual))
       }
     }
-    # Fallback if user gave a classification-based loss for regression => naive MSE approach
+    # Fallback for other losses: use the MSE-like gradient.
     return(residual)
   }
   
-  # If something unexpected
+  # Should not be reached.
   return(zero_vec)
 }

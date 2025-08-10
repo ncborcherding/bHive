@@ -26,49 +26,51 @@ library(caret)
 
 # Introduction
 
-The **bHIVE** package implements an Artificial Immune Network (AI-Net) algorithm for clustering, classification, and regression tasks. Inspired by biological immune systems, bHIVE uses principles like clonal selection, mutation, and suppression to analyze and model data. 
+The **bHIVE** package provides a flexible implementation of an Artificial Immune Network (AI-Net), a class of machine learning algorithms inspired by the human immune system. These algorithms can be used for a variety of tasks, including clustering, classification, and regression.
 
-This vignette demonstrates how to:
-1. Perform clustering, classification, and regression using `bHIVE`.
-2. Tune hyperparameters using `swarmbHIVE`.
-3. Use the `caret` wrapper for easy integration with machine learning workflows.
-4. Use multilayered immune networks with `honeycombHIVE`
-4. Visualize results with `ggplot2`.
+This vignette provides a comprehensive guide to using `bHIVE`, covering:
+1.  The core `bHIVE` algorithm for basic tasks.
+2.  Hyperparameter tuning with `swarmbHIVE`.
+3.  Advanced, deep-learning-inspired techniques using `honeycombHIVE` and `refineB`.
+4.  Integration with the `caret` package for streamlined machine learning workflows.
+5.  Visualization of results.
 
-## Parameters for `bHIVE()`
+## bHIVE and Deep Learning
 
-The behavior of the `bHIVE` function can be fine-tuned using a range of hyperparameters. Below is a description of the key parameters:
+A key feature of the `bHIVE` package is the ability to create multi-layered models that are analogous to deep neural networks. This is achieved through two main functions:
 
-| **Parameter**         | **Description**                                                                                               |
-|------------------------|-------------------------------------------------------------------------------------------------------------|
-| `X`                   | A numeric matrix or data frame of input features (rows are observations, columns are features).              |
-| `y`                   | (Optional) Target vector for classification (factor) or regression (numeric). If `NULL`, clustering is performed. |
-| `task`                | Specifies the task: `"clustering"`, `"classification"`, or `"regression"`.                                   |
-| `nAntibodies`         | Number of initial antibodies in the population. Larger values increase diversity but add computational cost.  |
-| `beta`                | Clone multiplier. Determines how many clones are generated for top-matching antibodies.                      |
-| `epsilon`             | Suppression threshold. Antibodies closer than `epsilon` are considered redundant and removed.                |
-| `maxIter`             | Maximum number of iterations for the algorithm.                                                             |
-| `affinityFunc`        | Affinity (similarity) function. Options include `"gaussian"`, `"laplace"`, `"polynomial"`, `"cosine"`, `"hamming"`. |
-| `distFunc`            | Distance function for clustering and suppression. Options include `"euclidean"`, `"manhattan"`, `"cosine"`, `"minkowski"`, `"hamming"`. |
-| `affinityParams`      | A list of optional parameters for the affinity/distance functions.                                           |
-| `mutationDecay`       | Factor controlling how the mutation rate decays over iterations. Default is `1.0` (no decay).                |
-| `mutationMin`         | Minimum mutation rate to avoid zero mutation.                                                               |
-| `maxClones`           | Maximum number of clones per antibody. Default is unlimited (`Inf`).                                         |
-| `stopTolerance`       | Tolerance for stopping the algorithm if the antibody population size stabilizes.                             |
-| `noImprovementLimit`  | Number of iterations without improvement before early stopping.                                              |
-| `initMethod`          | Method for initializing antibodies. Options: `"sample"` (randomly selects rows from `X`), `"random"` (Gaussian noise), `"random_uniform"` (samples uniformly in [min, max] of each column), or `"kmeans++"` (kmeans++-like initialization for coverage). |
-| `k`                   | Number of top-matching antibodies to consider during cloning.                                               |
-| `seed`                | Random seed for reproducibility.                                                                             |
-| `verbose`             | Logical. If `TRUE`, prints progress messages for each iteration.                                             |
+*   **`honeycombHIVE`**: This function stacks multiple `bHIVE` layers on top of each other. The prototypes (antibodies) from one layer are "collapsed" to form the input for the next layer. This hierarchical processing allows the model to learn increasingly abstract representations of the data, similar to how deep neural networks learn features at different levels of complexity.
 
----
+*   **`refineB`**: This function provides a mechanism for fine-tuning the antibody prototypes using gradient-based optimization, a cornerstone of deep learning. It supports various optimizers like Adam, SGD, and RMSProp, allowing the model to be refined in a way that is similar to training a neural network.
 
-### How `bHIVE` Works
+By combining `honeycombHIVE` and `refineB`, users can build sophisticated, deep-learning-like models that are tailored to their specific data and task.
 
-1. **Affinity Calculation**: Measures the similarity between each data point and antibodies using a specified `affinityFunc`.
-2. **Clonal Expansion and Mutation**: Generates clones of top-matching antibodies, introducing diversity via mutation.
-3. **Network Suppression**: Removes antibodies that are too similar to maintain diversity in the population.
-4. **Assignment**: Assigns data points to antibodies (clusters, labels, or numeric predictions).
+## The Core `bHIVE` Algorithm
+
+The `bHIVE` function is the workhorse of the package. It implements a standard AI-Net algorithm with the following key steps:
+
+1.  **Initialization**: A population of "antibodies" (prototypes) is created in the feature space.
+2.  **Affinity Calculation**: The similarity (affinity) between each data point and the antibodies is calculated.
+3.  **Clonal Selection and Mutation**: The antibodies with the highest affinity are "cloned", and the clones are mutated to explore the feature space.
+4.  **Network Suppression**: To maintain diversity, antibodies that are too similar to each other are removed from the population.
+5.  **Assignment**: Data points are assigned to the nearest antibody, resulting in clusters, class labels, or regression predictions.
+
+### `bHIVE` Parameters
+
+The behavior of the `bHIVE` function can be controlled by a variety of parameters:
+
+| **Parameter** | **Description** |
+| :--- | :--- |
+| `X` | Input data (matrix or data frame). |
+| `y` | Optional target vector for supervised tasks. |
+| `task` | The task to perform: "clustering", "classification", or "regression". |
+| `nAntibodies` | The initial number of antibodies. |
+| `beta` | A multiplier that controls the number of clones. |
+| `epsilon` | The suppression threshold for removing similar antibodies. |
+| `maxIter` | The maximum number of iterations. |
+| `affinityFunc` | The function to calculate affinity (e.g., "gaussian", "cosine"). |
+| `distFunc` | The distance function for suppression and assignment (e.g., "euclidean"). |
+| `initMethod` | The method for initializing antibodies (e.g., "sample", "kmeans++"). |
 
 ### Example of Parameter Selection
 
@@ -253,25 +255,31 @@ tuning_results$best_params
 The `bHIVE` package provides a `caret` wrapper for seamless integration with the `caret` framework, allowing for easy cross-validation and hyperparameter tuning. Here, we demonstrate regression on the Boston housing dataset.
 
 ```{r message=FALSE, warning=FALSE, tidy=FALSE}
-# Splitting Training and Validation Data Sets
+# Split the data into training and validation sets
 set.seed(42)
-sample.idx <- sample(nrow(X), nrow(X)*0.7)
-x_test <- X[sample.idx,]
-x_val <- X[-sample.idx,]
-y_test <- y[sample.idx]
-y_val <- y[-sample.idx]
+train_indices <- sample(nrow(X), nrow(X) * 0.7)
+X_train <- X[train_indices, ]
+y_train <- y[train_indices]
+X_val <- X[-train_indices, ]
+y_val <- y[-train_indices]
 
-
+# Set up cross-validation
 train_control <- trainControl(method = "cv", number = 2)
+
+# Define the hyperparameter grid to search
+tune_grid <- expand.grid(
+  nAntibodies = c(10, 20, 30),
+  beta = c(3, 5, 10),
+  epsilon = c(0.01, 0.05, 0.1)
+)
+
+# Train the model using caret
 set.seed(42)
-model <- train(x = x_test,
-               y = y_test,
+model <- train(x = X_train,
+               y = y_train,
                method = bHIVEmodel,
                trControl = train_control,
-               tuneGrid = expand.grid(
-                 nAntibodies = c(10, 20, 30),
-                 beta = c(3, 5, 10),
-                 epsilon = c(0.01, 0.05, 0.1)),
+               tuneGrid = tune_grid,
                verbose = FALSE)
 
 # Visualize caret results
@@ -283,95 +291,97 @@ ggplot(model) +
     theme_minimal()
 ```
 
-### Applying the caret-based model
+### Applying the `caret`-based model
 
-To use the best performing model from the above, we just using the ```predict()``` function with the separated validation data set (**X_val**).
+To use the best performing model from the tuning process, we use the `predict()` function on the validation data.
 
 ```{r tidy = FALSE}
-df <- data.frame(y = y_val,
-                 Predicted = predict(model, newdata = x_val))
+# Make predictions on the validation set
+predictions <- predict(model, newdata = X_val)
 
-ggplot(df, aes(x = y, y = Predicted)) +
+# Create a data frame for plotting
+plot_df <- data.frame(Actual = y_val, Predicted = predictions)
+
+# Visualize the results
+ggplot(plot_df, aes(x = Actual, y = Predicted)) +
     geom_point() +
     geom_smooth(method = "lm", color = "blue", se = FALSE) +
-    labs(title = "Regression Results with bHIVE", 
+    labs(title = "bHIVE Regression with caret: Actual vs. Predicted",
          x = "Actual Values (medv)", 
          y = "Predicted Values") +
     theme_minimal()
 ```
 
-## honeycombHIVE: Multilayered bHIVES
+## `honeycombHIVE`: Building Deep AI-Nets
 
-In `honeycombHIVE`, clustering proceeds hierarchically across multiple layers:
+The `honeycombHIVE` function allows you to build multi-layered AI-Nets, which are analogous to deep neural networks. Each layer in a `honeycombHIVE` model learns from the outputs of the previous layer, enabling the model to capture complex, hierarchical patterns in the data.
 
-`honeycombHIVE` iteratively builds and refines a network of "antibodies" (prototypes) to capture complex patterns in data. Initially, the `bHIVE` algorithm creates a set of prototypes, and then each layer can be fine-tuned using gradient-based updates (via the `refineB()` function) with flexible optimizers like SGD, Adam, and RMSProp. 
+### How `honeycombHIVE` Works
 
-Fo each layer, a collapse step aggregates the refined prototypes - by computing a centroid, medoid, or another statistic - compressing the data into a new, lower-dimensional representation where each prototype becomes a new observation. This new representation serves as the input for the next layer, similar to neural network architecture. 
+1.  **Layer 1**: A standard `bHIVE` model is trained on the input data `X`.
+2.  **Collapse**: The data points assigned to each antibody in Layer 1 are "collapsed" into a new set of prototypes. For example, by taking the centroid of all data points in a cluster.
+3.  **Layer 2**: A new `bHIVE` model is trained using the collapsed prototypes from Layer 1 as its input.
+4.  **Repeat**: Steps 2 and 3 are repeated for the desired number of layers.
+5.  **Refinement (Optional)**: At each layer, the `refineB` function can be used to fine-tune the antibodies using gradient-based optimization.
+
+This layer-by-layer process allows `honeycombHIVE` to learn a deep, hierarchical representation of the data.
 
 ```{r tidy=FALSE}
 # Load the Iris dataset
 data(iris)
 X <- as.matrix(iris[, 1:4])
 
-# Run honeycombHIVE for clustering
+# Run a 3-layer honeycombHIVE model for clustering
 res <- honeycombHIVE(X = X, 
                      task = "clustering", 
-                     epsilon = 0.05,
                      layers = 3, 
-                     nAntibodies = 30, 
+                     nAntibodies = 30, # Initial antibodies per layer
                      beta = 5, 
                      maxIter = 10, 
                      verbose = FALSE)
 
-# Visualize results from each layer
+# Visualize the clustering results from each layer
 for (i in seq_along(res)) {
   
-  # Create a data frame for plotting; add original Sepal.Length and Sepal.Width
+  # Create a data frame for plotting
   plot_df <- data.frame(
     Sepal.Length = iris$Sepal.Length, 
     Sepal.Width  = iris$Sepal.Width,
-    Cluster      = factor(res[[i]]$membership)  # cluster labels from layer i
+    Cluster      = factor(res[[i]]$membership)
   )
   
-  # Basic ggplot scatter plot
-  plot <- ggplot(plot_df, aes(x = Sepal.Length, 
-                              y = Sepal.Width, 
-                              color = Cluster)) +
+  # Create the plot
+  p <- ggplot(plot_df, aes(x = Sepal.Length, y = Sepal.Width, color = Cluster)) +
     geom_point(size = 3) +
-    labs(
-      title = paste("honeycombHIVE Clustering - Layer", i),
-      x     = "Sepal Length",
-      y     = "Sepal Width"
-    ) +
+    labs(title = paste("honeycombHIVE Clustering - Layer", i),
+         x = "Sepal Length", y = "Sepal Width") +
     theme_minimal() +
     scale_color_viridis(discrete = TRUE)
   
-  print(plot)
+  print(p)
 }
 ```
 
-Note: If you use `task = "classification"` or `task = "regression"`, honeycombHIVE will generate multi-layer predictions. You can compare each layer’s predictions against the true labels/outcomes to see if performance improves or if the data become too collapsed.
+As the visualization shows, the number of clusters can change at each layer as the model learns a more abstract representation of the data.
 
-## Gradient-based Refinement
+## `refineB`: Gradient-Based Optimization
 
-The ```refineB()``` function takes the prototypes produced by the ```bHIVE()``` algorithm and fine-tunes them using gradient‐based updates. In addition to the basic parameters:
+The `refineB` function provides a powerful mechanism for fine-tuning the antibody prototypes using gradient-based optimization. This is analogous to the backpropagation algorithm used to train deep neural networks.
 
-* **loss:** The loss function used to guide refinement. For a classification task, "categorical_crossentropy" is a typical choice.
-* **steps:** The number of gradient update iterations.
-* **lr:** The learning rate for each update.
-* **optimizers** 
-  * *sgd:* Standard stochastic gradient descent.
-  * *momentum:* SGD with momentum. (Control the momentum with **momentum_coef**).
-  * *adagrad:* Adaptive gradient descent.
-  * *adam:* Adaptive moment estimation. (Control the decay rates with **beta1** and **beta2**).
-  * *rmsprop:* Root Mean Square Propagation. (Control the decay of the squared gradient average with **rmsprop_decay**)
+`refineB` takes a set of antibody prototypes and a dataset, and it iteratively adjusts the prototypes to minimize a given loss function. It supports several common optimizers:
+
+*   **`sgd`**: Standard Stochastic Gradient Descent.
+*   **`momentum`**: SGD with momentum.
+*   **`adagrad`**: Adaptive Gradient Descent.
+*   **`adam`**: A popular adaptive optimizer.
+*   **`rmsprop`**: Another adaptive optimizer.
 
 ```{r tidy=FALSE}
-# Prepare the Iris dataset
+# Prepare the Iris dataset for classification
 X <- as.matrix(iris[, 1:4])
 y <- iris$Species
 
-# Run bHIVE to obtain initial antibody prototypes.
+# Run bHIVE to get an initial set of antibody prototypes
 set.seed(42)
 res <- bHIVE(X = X, 
              y = y, 
@@ -383,37 +393,37 @@ res <- bHIVE(X = X,
              k = 4,
              verbose = FALSE)
 
+# Extract the antibodies and assignments from the result
 Ab <- res$antibodies
 colnames(Ab) <- colnames(X)
-assignments <- res$assignments 
-# Ensure assignments are numeric indices.
+assignments <- res$assignments
 assignments <- as.integer(factor(assignments, levels = unique(assignments)))
 
-# PCA of the Iris data for visualization in 2D
+# Use PCA to reduce the data to 2 dimensions for visualization
 pca <- prcomp(X, scale. = TRUE)
 X_pca <- pca$x[, 1:2]
 colnames(X_pca) <- c("PC1", "PC2")
-# Transform initial prototypes into PCA space.
 A_bhive_pca <- predict(pca, Ab)
 
-# Run refinement using several optimizers.
+# Refine the antibodies using different optimizers
 optimizers <- c("sgd", "adam", "rmsprop")
 refined_list <- lapply(optimizers, function(opt) {
+  # Run the refinement process
   Ab_refined <- refineB(A = Ab,
                         X = X, 
                         y = y,
                         assignments = assignments,
                         loss = "categorical_crossentropy", 
                         task = "classification", 
-                        steps = 5, 
-                        lr = 0.01,
+                        steps = 5, # Number of refinement steps
+                        lr = 0.01, # Learning rate
                         verbose = FALSE,
-                        optimizer = opt,
-                        beta1 = 0.9,
-                        beta2 = 0.999,
-                        rmsprop_decay = 0.9)
-  colnames(Ab_refined) <- colnames(X)
+                        optimizer = opt)
+
+  # Transform the refined antibodies to the PCA space for visualization
   A_refined_pca <- predict(pca, Ab_refined)
+
+  # Return a data frame with the results
   data.frame(optimizer = opt,
              PC1_after = A_refined_pca[,1],
              PC2_after = A_refined_pca[,2])
@@ -545,13 +555,14 @@ res <- honeycombHIVE(X = X,
                      maxIter = 10, 
                      verbose = FALSE)
 
+# Visualize the clustering results from layer 2
 visualizeHIVE(result = res,
               X = iris[, 1:4],
               plot_type = "scatter",
               title = "Layer 2: Scatterplot (Clustering)",
               layer = 2,
               task = "clustering",
-              transform = TRUE,
+              transform = TRUE, # Use a dimensionality reduction transformation
               transformation_method = "PCA")
 
 ```
@@ -573,10 +584,11 @@ res_class <- honeycombHIVE(X = X,
                            maxIter = 10, 
                            verbose = FALSE)
 
+# Visualize the classification results from layer 1 as a violin plot
 visualizeHIVE(result = res_class,
               X = iris[, 1:4],
               plot_type = "violin",
-              feature = "Sepal.Width",
+              feature = "Sepal.Width", # The feature to plot
               title = "Violin Plot: Sepal.Width by Group",
               layer = 1,
               task = "classification")
@@ -602,11 +614,12 @@ res_reg <- honeycombHIVE(
   maxIter = 10, 
   verbose = FALSE)
 
+# Visualize the regression results from layer 2 as a density plot
 visualizeHIVE(result = res_reg,
               X = X_scaled,
               plot_type = "density",
-              feature = "Sepal.Length",
-              title = "Density Plot: Sepal.Width",
+              feature = "Sepal.Length", # The feature to plot
+              title = "Density Plot: Sepal.Length",
               layer = 2,
               task = "regression")
 
